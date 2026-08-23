@@ -1,0 +1,41 @@
+# Environment & secrets
+.env
+*.key
+*.pem
+
+# Data files (large / generated)
+data/*.db
+data/*.sqlite
+data/*.csv
+data/*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model artifacts
+models/*.pkl
+models/*.joblib
+models/*.bin
