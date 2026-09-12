@@ -224,15 +224,7 @@ class Database:
                 ts = t.get("created_time") or t.get("timestamp") or t.get("ts", 0)
                 # Handle ISO string timestamps (including high-precision fractional seconds)
                 if isinstance(ts, str):
-                    # Python 3.9 fromisoformat doesn't handle all formats; normalize first
-                    ts_clean = ts.replace("Z", "+00:00")
-                    try:
-                        dt = datetime.fromisoformat(ts_clean)
-                    except ValueError:
-                        # Truncate fractional seconds to 6 digits for strptime compat
-                        from re import sub
-                        ts_clean = sub(r'(\.\d{6})\d+', r'\1', ts_clean)
-                        dt = datetime.fromisoformat(ts_clean)
+                    dt = _parse_iso_datetime(ts)
                     ts_unix = int(dt.timestamp() * 1000)
                 else:
                     ts_unix = ts
@@ -270,13 +262,7 @@ class Database:
             for r in raw_rates:
                 ft = r.get("funding_time", "")
                 if isinstance(ft, str):
-                    ft_clean = ft.replace("Z", "+00:00")
-                    try:
-                        dt = datetime.fromisoformat(ft_clean)
-                    except ValueError:
-                        from re import sub
-                        ft_clean = sub(r'(\.\d{6})\d+', r'\1', ft_clean)
-                        dt = datetime.fromisoformat(ft_clean)
+                    dt = _parse_iso_datetime(ft)
                     ft_unix = int(dt.timestamp())
                 else:
                     ft_unix = ft
@@ -362,6 +348,20 @@ class Database:
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
+
+
+def _parse_iso_datetime(s: str) -> datetime:
+    """
+    Parse ISO 8601 datetime strings, handling arbitrary fractional-second precision.
+    Python 3.9's fromisoformat only accepts 0, 3, or 6 fractional digits.
+    """
+    import re
+    s = s.replace("Z", "+00:00")
+    # Normalize fractional seconds to exactly 6 digits
+    m = re.match(r'(.*\.\d{1,6})(\d*)(.*)', s)
+    if m:
+        s = m.group(1).ljust(len(m.group(1).split('.')[0]) + 7, '0') + m.group(3)
+    return datetime.fromisoformat(s)
 
 
 def _parse_dollar(value) -> Optional[float]:
