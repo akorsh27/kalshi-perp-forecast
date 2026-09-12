@@ -9,6 +9,7 @@ Tables:
 
 import logging
 from datetime import datetime, timezone
+from typing import List, Optional
 
 import pandas as pd
 from sqlalchemy import (
@@ -132,7 +133,7 @@ class Database:
         logger.info("Database initialized at %s", db_path)
 
     def insert_candlesticks(
-        self, raw_candles: list[dict], ticker: str, interval_minutes: int
+        self, raw_candles: List[dict], ticker: str, interval_minutes: int
     ) -> int:
         """
         Parse and insert candlestick records (upsert — skip duplicates).
@@ -205,7 +206,7 @@ class Database:
 
         return inserted
 
-    def insert_trades(self, raw_trades: list[dict], ticker: str) -> int:
+    def insert_trades(self, raw_trades: List[dict], ticker: str) -> int:
         """Insert trade records, skipping duplicates by trade_id."""
         session = self.Session()
         inserted = 0
@@ -221,9 +222,17 @@ class Database:
                     continue
 
                 ts = t.get("created_time") or t.get("timestamp") or t.get("ts", 0)
-                # Handle ISO string timestamps
+                # Handle ISO string timestamps (including high-precision fractional seconds)
                 if isinstance(ts, str):
-                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    # Python 3.9 fromisoformat doesn't handle all formats; normalize first
+                    ts_clean = ts.replace("Z", "+00:00")
+                    try:
+                        dt = datetime.fromisoformat(ts_clean)
+                    except ValueError:
+                        # Truncate fractional seconds to 6 digits for strptime compat
+                        from re import sub
+                        ts_clean = sub(r'(\.\d{6})\d+', r'\1', ts_clean)
+                        dt = datetime.fromisoformat(ts_clean)
                     ts_unix = int(dt.timestamp() * 1000)
                 else:
                     ts_unix = ts
@@ -252,7 +261,7 @@ class Database:
 
         return inserted
 
-    def insert_funding_rates(self, raw_rates: list[dict], ticker: str) -> int:
+    def insert_funding_rates(self, raw_rates: List[dict], ticker: str) -> int:
         """Insert funding rate records, skipping duplicates."""
         session = self.Session()
         inserted = 0
@@ -261,7 +270,13 @@ class Database:
             for r in raw_rates:
                 ft = r.get("funding_time", "")
                 if isinstance(ft, str):
-                    dt = datetime.fromisoformat(ft.replace("Z", "+00:00"))
+                    ft_clean = ft.replace("Z", "+00:00")
+                    try:
+                        dt = datetime.fromisoformat(ft_clean)
+                    except ValueError:
+                        from re import sub
+                        ft_clean = sub(r'(\.\d{6})\d+', r'\1', ft_clean)
+                        dt = datetime.fromisoformat(ft_clean)
                     ft_unix = int(dt.timestamp())
                 else:
                     ft_unix = ft
@@ -349,7 +364,7 @@ class Database:
 # ─── Helpers ─────────────────────────────────────────────────────────────
 
 
-def _parse_dollar(value) -> float | None:
+def _parse_dollar(value) -> Optional[float]:
     """Convert FixedPointDollars string (e.g. '97234.56') to float."""
     if value is None:
         return None
@@ -359,7 +374,7 @@ def _parse_dollar(value) -> float | None:
         return None
 
 
-def _parse_count(value) -> float | None:
+def _parse_count(value) -> Optional[float]:
     """Convert FixedPointCount string (e.g. '10.00') to float."""
     if value is None:
         return None

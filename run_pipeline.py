@@ -88,24 +88,50 @@ def run_ingestion(ticker: str = None) -> str:
     else:
         logger.warning("No funding rate data returned")
 
-    # Pull recent trades (last 7 days to avoid excessive pagination)
-    trade_start = now - (7 * 24 * 3600)
-    logger.info("Pulling trades (last 7 days)...")
-    trades = client.get_trades(ticker=ticker, min_ts=trade_start, max_ts=now)
-    if trades:
-        inserted = db.insert_trades(trades, ticker=ticker)
-        logger.info("Trades: %d fetched, %d new inserted", len(trades), inserted)
-    else:
-        logger.warning("No trade data returned")
+    # Pull recent trades (last 24h — trades are high-volume, keep it bounded)
+    trade_start = now - (24 * 3600)
+    logger.info("Pulling trades (last 24 hours)...")
+    try:
+        trades = client.get_trades(ticker=ticker, min_ts=trade_start, max_ts=now)
+        if trades:
+            inserted = db.insert_trades(trades, ticker=ticker)
+            logger.info("Trades: %d fetched, %d new inserted", len(trades), inserted)
+        else:
+            logger.warning("No trade data returned")
+    except Exception as e:
+        logger.warning("Trade ingestion failed (non-critical): %s", e)
+        logger.info("Continuing without trade data — candlesticks and funding rates are sufficient.")
 
     return ticker
 
 
-def run_training(ticker: str = DEFAULT_TICKER):
+def _discover_ticker_from_db() -> str:
+    """Look up the most common ticker already stored in the database."""
+    from src.database import Database
+    import pandas as pd
+    db = Database()
+    try:
+        with db.engine.connect() as conn:
+            result = pd.read_sql(
+                "SELECT ticker, COUNT(*) as cnt FROM candlesticks GROUP BY ticker ORDER BY cnt DESC LIMIT 1",
+                conn,
+            )
+        if not result.empty:
+            return result.iloc[0]["ticker"]
+    except Exception:
+        pass
+    return DEFAULT_TICKER
+
+
+def run_training(ticker: str = None):
     """Run feature engineering and model training."""
     from src.database import Database
     from src.features import build_feature_matrix
     from src.model import backtest, train_final_model
+
+    if ticker is None:
+        ticker = _discover_ticker_from_db()
+        logger.info("Auto-discovered ticker from DB: %s", ticker)
 
     db = Database()
     candles = db.get_candlesticks_df(ticker=ticker, interval_minutes=60)
@@ -138,7 +164,7 @@ def run_training(ticker: str = DEFAULT_TICKER):
     if not results["feature_importance"].empty:
         print("\n  TOP FEATURES (by gain):")
         for _, row in results["feature_importance"].head(10).iterrows():
-            print(f"    {row['feature']:25s} {row['importance']:.1f}")
+            print(f"    {row['feature']:25s} {row['importance']:.6f}")
 
     # Train final model on full data
     logger.info("Training final model on full dataset...")
@@ -147,12 +173,16 @@ def run_training(ticker: str = DEFAULT_TICKER):
     return results
 
 
-def run_dashboard(ticker: str = DEFAULT_TICKER):
+def run_dashboard(ticker: str = None):
     """Launch the Dash visualization dashboard."""
     from src.database import Database
     from src.features import build_feature_matrix
     from src.model import backtest
     from src.dashboard import build_dash_app
+
+    if ticker is None:
+        ticker = _discover_ticker_from_db()
+        logger.info("Auto-discovered ticker from DB: %s", ticker)
 
     db = Database()
     candles = db.get_candlesticks_df(ticker=ticker, interval_minutes=60)
@@ -172,7 +202,7 @@ def run_dashboard(ticker: str = DEFAULT_TICKER):
     )
     print("\n  Dashboard running at http://127.0.0.1:8050")
     print("  Press Ctrl+C to stop.\n")
-    app.run_server(debug=False, port=8050)
+    app.run(debug=False, port=8050)
 
 
 def main():
@@ -197,13 +227,9 @@ def main():
 
     if args.train or run_all:
         logger.info("=" * 40 + " TRAINING " + "=" * 40)
-        if ticker is None:
-            ticker = DEFAULT_TICKER
         run_training(ticker)
 
     if args.dashboard or run_all:
-        if ticker is None:
-            ticker = DEFAULT_TICKER
         run_dashboard(ticker)
 
 

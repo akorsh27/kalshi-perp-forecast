@@ -20,6 +20,7 @@ Features:
 """
 
 import logging
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -167,7 +168,7 @@ def _merge_funding_features(df: pd.DataFrame, funding_df: pd.DataFrame) -> pd.Da
     return df
 
 
-def _get_feature_columns() -> list[str]:
+def _get_feature_columns() -> List[str]:
     """Return the list of feature column names used by the model."""
     return [
         "log_return_1h",
@@ -195,7 +196,7 @@ def _get_feature_columns() -> list[str]:
     ]
 
 
-def get_feature_names() -> list[str]:
+def get_feature_names() -> List[str]:
     """Public accessor for feature column names."""
     return _get_feature_columns()
 

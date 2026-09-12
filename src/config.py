@@ -31,7 +31,7 @@ _BASE_URLS = {
 KALSHI_BASE_URL = _BASE_URLS[KALSHI_ENV]
 
 # --- Market Defaults ---
-DEFAULT_TICKER = "BTC-USD"
+DEFAULT_TICKER = "KXBTCPERP1"
 
 # Candlestick intervals (minutes)
 INTERVAL_1MIN = 1

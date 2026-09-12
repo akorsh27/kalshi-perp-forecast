@@ -150,11 +150,14 @@ class LightGBMForecaster:
         return self.model.predict(X_clean)
 
     def feature_importance(self) -> pd.DataFrame:
-        """Return feature importances sorted by gain."""
+        """Return feature importances sorted by gain, with split count as fallback."""
         if self.model is None:
             return pd.DataFrame()
-        importance = self.model.feature_importance(importance_type="gain")
         names = self.model.feature_name()
+        gain = self.model.feature_importance(importance_type="gain")
+        split = self.model.feature_importance(importance_type="split")
+        # Use gain if available, fall back to split counts
+        importance = gain if gain.sum() > 0 else split
         df = pd.DataFrame({"feature": names, "importance": importance})
         return df.sort_values("importance", ascending=False).reset_index(drop=True)
 
@@ -210,6 +213,7 @@ def backtest(
 
     naive = NaiveBaseline()
     ma = MovingAverageBaseline(window=12)
+    last_lgbm = None
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X)):
         if len(train_idx) < min_train_size:
@@ -248,6 +252,7 @@ def backtest(
             results["lightgbm"]["predictions"].extend(lgbm_preds)
             results["lightgbm"]["actuals"].extend(y_test)
             results["lightgbm"]["timestamps"].extend(ts_test)
+            last_lgbm = lgbm
 
         logger.info(
             "Fold %d: train=%d, test=%d", fold, len(train_idx), len(test_idx)
@@ -283,7 +288,7 @@ def backtest(
     return {
         "metrics": summary,
         "predictions": predictions_df,
-        "feature_importance": lgbm.feature_importance() if HAS_LIGHTGBM and lgbm.model else pd.DataFrame(),
+        "feature_importance": last_lgbm.feature_importance() if HAS_LIGHTGBM and last_lgbm and last_lgbm.model else pd.DataFrame(),
     }
 
 

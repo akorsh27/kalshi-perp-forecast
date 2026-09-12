@@ -9,7 +9,7 @@ import base64
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, List, Optional
 
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
@@ -196,7 +196,7 @@ class KalshiClient:
 
     # ─── Public Market Data Endpoints ────────────────────────────────────
 
-    def get_markets(self, status: Optional[str] = None) -> list[dict]:
+    def get_markets(self, status: Optional[str] = None) -> List[dict]:
         """List available margin markets."""
         params = {}
         if status:
@@ -214,7 +214,7 @@ class KalshiClient:
         start_ts: int = None,
         end_ts: int = None,
         period_interval: int = INTERVAL_1HR,
-    ) -> list[dict]:
+    ) -> List[dict]:
         """
         Fetch OHLCV candlestick data for a margin market.
 
@@ -259,23 +259,26 @@ class KalshiClient:
         min_ts: Optional[int] = None,
         max_ts: Optional[int] = None,
         limit: int = 1000,
-    ) -> list[dict]:
+        max_pages: int = 50,
+    ) -> List[dict]:
         """
-        Fetch public margin trades (paginated — fetches all pages).
+        Fetch public margin trades (paginated — fetches up to max_pages).
 
         Args:
             ticker: Market ticker
             min_ts: Filter trades after this Unix timestamp
             max_ts: Filter trades before this Unix timestamp
             limit: Results per page (max 1000)
+            max_pages: Maximum number of pages to fetch (prevents runaway pagination)
 
         Returns:
             List of all trade records within the time range.
         """
         all_trades = []
         cursor = None
+        page = 0
 
-        while True:
+        while page < max_pages:
             params = {"ticker": ticker, "limit": limit}
             if min_ts:
                 params["min_ts"] = min_ts
@@ -284,17 +287,23 @@ class KalshiClient:
             if cursor:
                 params["cursor"] = cursor
 
-            data = self._request("GET", "/margin/trades", params=params)
+            try:
+                data = self._request("GET", "/margin/trades", params=params)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                logger.warning("Trade fetch interrupted on page %d: %s", page, e)
+                break
+
             trades = data.get("trades", [])
             all_trades.extend(trades)
+            page += 1
 
             cursor = data.get("cursor")
             if not cursor or len(trades) < limit:
                 break
 
-            logger.debug("Paginating trades: %d fetched so far", len(all_trades))
+            logger.debug("Paginating trades: %d fetched so far (page %d)", len(all_trades), page)
 
-        logger.info("Retrieved %d trades total for %s", len(all_trades), ticker)
+        logger.info("Retrieved %d trades total for %s (%d pages)", len(all_trades), ticker, page)
         return all_trades
 
     def get_historical_funding_rates(
@@ -302,7 +311,7 @@ class KalshiClient:
         ticker: str = DEFAULT_TICKER,
         start_ts: Optional[int] = None,
         end_ts: Optional[int] = None,
-    ) -> list[dict]:
+    ) -> List[dict]:
         """
         Fetch historical funding rates for a market.
 
