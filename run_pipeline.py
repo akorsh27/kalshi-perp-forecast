@@ -199,6 +199,7 @@ def run_dashboard(ticker: str = None):
         predictions_df=results["predictions"],
         metrics=results["metrics"],
         feature_importance=results["feature_importance"],
+        candles_df=candles,
     )
     print("\n  Dashboard running at http://127.0.0.1:8050")
     print("  Press Ctrl+C to stop.\n")
